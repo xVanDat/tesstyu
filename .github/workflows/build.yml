@@ -43,9 +43,16 @@ jobs:
 
       - name: Install ldid
         run: |
-          curl -LO https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid
-          chmod +x ldid
-          sudo mv ldid /usr/local/bin/
+          ARCH=$(uname -m)
+          if [[ "$ARCH" == "arm64" ]]; then
+            URL="https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_arm64"
+          else
+            URL="https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_x86_64"
+          fi
+
+          curl -LO $URL
+          chmod +x $(basename $URL)
+          sudo mv $(basename $URL) /usr/local/bin/ldid
 
       - name: Build .deb
         run: make package FINALPACKAGE=1
