@@ -24,13 +24,23 @@ jobs:
       - name: Download armv7-compatible SDK
         run: |
           mkdir -p theos/sdks
-          # Clone theos/sdks - lay SDK co san (co ca armv7)
           git clone --depth 1 https://github.com/theos/sdks.git _sdks
-          # Copy tat ca SDK vao thu muc dung
-          cp -r _sdks/*.sdk theos/sdks/ 2>/dev/null || true
+          cp -r _sdks/*.sdk theos/sdks/
           rm -rf _sdks
           echo "=== SDKs available ==="
           ls theos/sdks/
+
+      - name: Fix SDK module.map (clang moi bat buoc phai la module.modulemap)
+        run: |
+          SDK="theos/sdks/iPhoneOS12.4.sdk"
+          # Tim tat ca file ten "module.map", tao them ban sao ten "module.modulemap"
+          find "$SDK" -name "module.map" | while read f; do
+            dir=$(dirname "$f")
+            if [ ! -f "$dir/module.modulemap" ]; then
+              cp "$f" "$dir/module.modulemap"
+              echo "Fixed: $f"
+            fi
+          done
 
       - name: Set THEOS env
         run: echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
