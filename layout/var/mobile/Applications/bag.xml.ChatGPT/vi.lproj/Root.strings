@@ -1,0 +1,7 @@
+/* Settings bundle - Tiếng Việt */
+"API Settings"      = "Cài đặt API";
+"Advanced Settings" = "Cài đặt nâng cao";
+"Base URL"          = "Base URL (địa chỉ API)";
+"API Key"           = "API Key";
+"Completion-Model"  = "Mô hình Chat";
+"Image-Model"       = "Mô hình tạo ảnh";

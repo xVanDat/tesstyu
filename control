@@ -1,0 +1,10 @@
+Package: com.xvandat.chatgptcompattweeak
+Name: ChatGPT Legacy - OpenAI Compat + Việt hoá
+Version: 2.0.0
+Architecture: iphoneos-arm
+Description: OpenAI-compatible APIs + giao diện tiếng Việt cho ChatGPT Legacy iOS.
+ Hỗ trợ Groq, OpenRouter, Ollama... Lưu lịch sử hội thoại vĩnh viễn.
+Maintainer: xVanDat
+Author: xVanDat
+Section: Tweaks
+Depends: mobilesubstrate | substitute | libhooker

@@ -1,0 +1,46 @@
+name: Build Tweak
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:   # cho phép chạy thủ công từ tab Actions
+
+jobs:
+  build:
+    runs-on: macos-latest   # GitHub cung cấp Mac runner miễn phí
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Cài Theos tự động (không cần Xcode full, chỉ cần CLT + SDK)
+      - name: Setup Theos
+        uses: actions/checkout@v4
+        with:
+          repository: theos/theos
+          ref: master
+          path: theos
+          submodules: recursive
+
+      - name: Download iOS SDK
+        run: |
+          # Tải iOS SDK đã được extract sẵn (không cần Xcode)
+          wget -q https://github.com/theos/sdks/releases/download/2024-09-08/iPhoneOS16.5.sdk.tar.xz
+          mkdir -p theos/sdks
+          tar -xf iPhoneOS16.5.sdk.tar.xz -C theos/sdks/
+
+      - name: Set THEOS env
+        run: echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
+
+      - name: Build .deb
+        run: |
+          cd $GITHUB_WORKSPACE
+          make package FINALPACKAGE=1
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatGPTCompatTweak-deb
+          # Theos đặt .deb vào thư mục packages/
+          path: packages/*.deb
+          retention-days: 30
