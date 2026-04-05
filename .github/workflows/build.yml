@@ -23,30 +23,12 @@ jobs:
 
       - name: Download armv7-compatible SDK
         run: |
-          # iOS 12.1 la SDK cuoi ho tro armv7 (iPhone 4s/5/5c)
-          # Lay tu theos/sdks releases chinh thuc
           mkdir -p theos/sdks
-
-          curl -fsSL \
-            "https://github.com/theos/sdks/releases/download/2024-09-08/iPhoneOS12.1.sdk.tar.xz" \
-            -o sdk.tar.xz || \
-          curl -fsSL \
-            "https://github.com/theos/sdks/archive/refs/heads/master.tar.gz" \
-            -o sdk.tar.xz
-
-          # Thu giai nen vao sdks/
-          if file sdk.tar.xz | grep -q "XZ"; then
-            tar -xf sdk.tar.xz -C theos/sdks/
-          else
-            # La tar.gz (clone archive) - giai nen roi copy SDK phu hop
-            mkdir -p _sdks_tmp
-            tar -xzf sdk.tar.xz -C _sdks_tmp/ --strip-components=1
-            # Tim SDK co armv7 (iOS 12.x tro xuong)
-            for sdk in _sdks_tmp/iPhoneOS12*.sdk _sdks_tmp/iPhoneOS11*.sdk _sdks_tmp/iPhoneOS10*.sdk; do
-              [ -d "$sdk" ] && cp -r "$sdk" theos/sdks/ && break
-            done
-          fi
-
+          # Clone theos/sdks - lay SDK co san (co ca armv7)
+          git clone --depth 1 https://github.com/theos/sdks.git _sdks
+          # Copy tat ca SDK vao thu muc dung
+          cp -r _sdks/*.sdk theos/sdks/ 2>/dev/null || true
+          rm -rf _sdks
           echo "=== SDKs available ==="
           ls theos/sdks/
 
