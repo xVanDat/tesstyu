@@ -110,6 +110,20 @@ static NSString *VN(NSString *s) {
 
 
 // -----------------------------------------------
+// Runtime alert helper
+// Dung objc_getClass thay vi [CGAPIHelper ...] truc tiep
+// vi linker khong the resolve app-internal class luc build time
+// -----------------------------------------------
+
+static void TWEAKAlert(NSString *title, NSString *msg) {
+    Class cls = objc_getClass("CGAPIHelper");
+    if (cls) {
+        ((void (*)(Class, SEL, NSString *, NSString *))objc_msgSend)(
+            cls, @selector(alert:withMessage:), title, msg);
+    }
+}
+
+// -----------------------------------------------
 // Helpers
 // -----------------------------------------------
 
@@ -186,7 +200,7 @@ static const char kBaseURLFieldKey = 0;
             if (parsed[@"error"]) {
                 NSString *msg = parsed[@"error"][@"message"];
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [CGAPIHelper alert:@"C\u1ea3nh b\u00e1o" withMessage:msg];
+                    TWEAKAlert(@"C\u1ea3nh b\u00e1o", msg);
                     [NSNotificationCenter.defaultCenter
                         postNotificationName:@"LOG-IN FAILURE" object:nil];
                 });
@@ -218,8 +232,7 @@ static const char kBaseURLFieldKey = 0;
                 postNotificationName:@"LOG-IN VALID" object:nil];
         } else {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [CGAPIHelper alert:@"L\u1ed7i k\u1ebft n\u1ed1i"
-                       withMessage:@"Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i API. Ki\u1ec3m tra l\u1ea1i Base URL v\u00e0 internet."];
+                TWEAKAlert(@"L\u1ed7i k\u1ebft n\u1ed1i", @"Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i API. Ki\u1ec3m tra l\u1ea1i Base URL v\u00e0 internet.");
             });
             [NSNotificationCenter.defaultCenter
                 postNotificationName:@"LOG-IN FAILURE" object:nil];
