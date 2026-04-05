@@ -3,17 +3,16 @@ name: Build Tweak
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:   # cho phép chạy thủ công từ tab Actions
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-latest   # GitHub cung cấp Mac runner miễn phí
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Cài Theos tự động (không cần Xcode full, chỉ cần CLT + SDK)
       - name: Setup Theos
         uses: actions/checkout@v4
         with:
@@ -24,23 +23,31 @@ jobs:
 
       - name: Download iOS SDK
         run: |
-          # Tải iOS SDK đã được extract sẵn (không cần Xcode)
-          wget -q https://github.com/theos/sdks/releases/download/2024-09-08/iPhoneOS16.5.sdk.tar.xz
-          mkdir -p theos/sdks
-          tar -xf iPhoneOS16.5.sdk.tar.xz -C theos/sdks/
+          curl -fsSL https://github.com/theos/sdks/archive/refs/heads/master.tar.gz \
+            | tar -xz --strip-components=1 \
+                  -C theos/sdks \
+                  --include="*/iPhoneOS*.sdk" \
+                  --include="iPhoneOS*.sdk" \
+            2>/dev/null || true
+
+          # Fallback: clone nếu tar filter không support trên runner này
+          if [ -z "$(ls theos/sdks/*.sdk 2>/dev/null)" ]; then
+            git clone --depth 1 https://github.com/theos/sdks.git _sdks
+            cp -r _sdks/*.sdk theos/sdks/
+          fi
+
+          echo "SDKs available:"
+          ls theos/sdks/
 
       - name: Set THEOS env
         run: echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
 
       - name: Build .deb
-        run: |
-          cd $GITHUB_WORKSPACE
-          make package FINALPACKAGE=1
+        run: make package FINALPACKAGE=1
 
-      - name: Upload .deb artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ChatGPTCompatTweak-deb
-          # Theos đặt .deb vào thư mục packages/
           path: packages/*.deb
           retention-days: 30
