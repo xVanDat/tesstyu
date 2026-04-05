@@ -25,21 +25,17 @@ jobs:
         run: |
           mkdir -p theos/sdks
           git clone --depth 1 https://github.com/theos/sdks.git _sdks
-          cp -r _sdks/*.sdk theos/sdks/
+          # Chi copy iPhoneOS12.4.sdk, khong copy AppleTVOS hay SDK khac
+          cp -r _sdks/iPhoneOS12.4.sdk theos/sdks/
           rm -rf _sdks
           echo "=== SDKs available ==="
           ls theos/sdks/
 
-      - name: Fix SDK module.map (clang moi bat buoc phai la module.modulemap)
+      - name: Fix SDK module.map
         run: |
-          SDK="theos/sdks/iPhoneOS12.4.sdk"
-          # Tim tat ca file ten "module.map", tao them ban sao ten "module.modulemap"
-          find "$SDK" -name "module.map" | while read f; do
+          find theos/sdks/iPhoneOS12.4.sdk -name "module.map" | while read f; do
             dir=$(dirname "$f")
-            if [ ! -f "$dir/module.modulemap" ]; then
-              cp "$f" "$dir/module.modulemap"
-              echo "Fixed: $f"
-            fi
+            [ ! -f "$dir/module.modulemap" ] && cp "$f" "$dir/module.modulemap"
           done
 
       - name: Set THEOS env
