@@ -42,11 +42,11 @@ jobs:
         run: echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
 
       - name: Install ldid
-  run: |
-    git clone https://github.com/ProcursusTeam/ldid.git
-    cd ldid
-    make
-    sudo cp ldid /usr/local/bin/
+        run: |
+          git clone https://github.com/ProcursusTeam/ldid.git
+          cd ldid
+          make
+          sudo cp ldid /usr/local/bin/
 
       - name: Build .deb
         run: make package FINALPACKAGE=1
