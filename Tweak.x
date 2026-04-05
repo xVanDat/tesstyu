@@ -1,4 +1,4 @@
-// ChatGPTCompatTweak - Force Groq API (No Login Bypass)
+// ChatGPTCompatTweak - Force Groq API & Fix Auth Issues
 
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
@@ -9,34 +9,66 @@
 + (id)loopErrorBack:(NSString *)errorMsg;
 @end
 
-// Khai báo cứng Base URL của Groq
 #define GROQ_BASE_URL @"https://api.groq.com/openai"
 
 // -----------------------------------------------
-// 1. Bắt cóc và tráo đổi URL sang Groq
+// 1. Ép app nhận diện là "Đã đăng nhập" ngay khi mở lên
+// -----------------------------------------------
+%hook CGAppDelegate
+
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasLoggedInUser"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    return %orig;
+}
+
+%end
+
+// -----------------------------------------------
+// 2. Tráo URL và Ép Header chứa Key thật
 // -----------------------------------------------
 %hook NSMutableURLRequest
 
 - (void)setURL:(NSURL *)url {
     NSString *s = url.absoluteString;
-    // Tự động tìm và đổi link OpenAI thành Groq
     if ([s rangeOfString:@"https://api.openai.com"].location != NSNotFound) {
         url = [NSURL URLWithString:[s stringByReplacingOccurrencesOfString:@"https://api.openai.com" withString:GROQ_BASE_URL]];
     }
     %orig(url);
 }
 
+// Can thiệp vào Header Authorization để chắc chắn app truyền đúng API Key
+- (void)setValue:(NSString *)value forHTTPHeaderField:(NSString *)field {
+    if ([field isEqualToString:@"Authorization"]) {
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        
+        // Quét tìm API key từ các tên biến phổ biến nhất mà Settings.bundle hay dùng
+        NSString *realKey = [defaults objectForKey:@"apiKey"];
+        if (!realKey || realKey.length == 0) realKey = [defaults objectForKey:@"api_key_preference"];
+        if (!realKey || realKey.length == 0) realKey = [defaults objectForKey:@"API_KEY"];
+        if (!realKey || realKey.length == 0) realKey = [defaults objectForKey:@"apikey"];
+        
+        if (realKey && realKey.length > 0) {
+            // Mẹo lừa app: Nếu user thêm 'sk-' vào đầu key Groq để pass điều kiện, ta sẽ xóa nó đi trước khi gửi đi
+            if ([realKey hasPrefix:@"sk-gsk_"]) {
+                realKey = [realKey stringByReplacingOccurrencesOfString:@"sk-gsk_" withString:@"gsk_"];
+            }
+            value = [NSString stringWithFormat:@"Bearer %@", realKey];
+        }
+    }
+    %orig(value, field);
+}
+
 %end
 
 // -----------------------------------------------
-// 2. Chặn câu thông báo lỗi "ảo" của app gốc
+// 3. Sửa lỗi hiển thị ảo
 // -----------------------------------------------
 %hook CGAPIHelper
 
 + (id)loopErrorBack:(NSString *)msg {
-    // Đổi câu báo lỗi cứng của app gốc thành lỗi bao quát hơn để dễ debug
     if ([msg rangeOfString:@"OpenAI"].location != NSNotFound) {
-        msg = @"Lỗi kết nối Groq: Mạng yếu, sai Tên Model, API Key, hoặc iOS quá cũ không hỗ trợ chuẩn SSL/TLS mới.";
+        msg = @"Lỗi kết nối: Sai Model, API Key, mạng yếu hoặc iOS quá cũ.";
     }
     return %orig(msg);
 }
