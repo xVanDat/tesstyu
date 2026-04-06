@@ -1,88 +1,152 @@
-// ChatGPTCompatTweak - Ultimate Bypass Authentication
+// ChatGPTCompatTweak
+// - Redirect tat ca request tu api.openai.com sang api.groq.com/openai
+// - Fix login flow: /v1/me -> /v1/models (Groq compatible)
+// - Luu lich su chat vao Documents/ (vinh vien, khong bi iOS xoa)
 
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
+#import <objc/runtime.h>
+
+#define GROQ_DOMAIN @"https://api.groq.com/openai"
+#define OPENAI_DOMAIN @"https://api.openai.com"
 
 @interface CGAPIHelper : NSObject
 + (void)alert:(NSString *)title withMessage:(NSString *)message;
-+ (id)loopErrorBack:(NSString *)errorMsg;
 @end
 
-#define GROQ_BASE_URL @"https://api.groq.com/openai"
+static NSString *TWEAKDocumentsDir() {
+    return [NSSearchPathForDirectoriesInDomains(
+        NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+}
+
+static void TWEAKAlert(NSString *title, NSString *msg) {
+    Class cls = objc_getClass("CGAPIHelper");
+    if (cls)
+        ((void (*)(Class, SEL, NSString *, NSString *))objc_msgSend)(
+            cls, @selector(alert:withMessage:), title, msg);
+}
 
 // -----------------------------------------------
-// 1. Tóm Request và sửa Header/URL
+// 1. Redirect tat ca request openai -> groq
 // -----------------------------------------------
+
 %hook NSMutableURLRequest
 
 - (void)setURL:(NSURL *)url {
     NSString *s = url.absoluteString;
-    if ([s rangeOfString:@"https://api.openai.com"].location != NSNotFound) {
-        url = [NSURL URLWithString:[s stringByReplacingOccurrencesOfString:@"https://api.openai.com" withString:GROQ_BASE_URL]];
+    if ([s rangeOfString:OPENAI_DOMAIN].location != NSNotFound) {
+        url = [NSURL URLWithString:
+               [s stringByReplacingOccurrencesOfString:OPENAI_DOMAIN
+                                            withString:GROQ_DOMAIN]];
     }
     %orig(url);
-}
-
-- (void)setValue:(NSString *)value forHTTPHeaderField:(NSString *)field {
-    if ([field isEqualToString:@"Authorization"]) {
-        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        NSString *realKey = [defaults objectForKey:@"apiKey"];
-        
-        // Quét các tên biến khả thi trong Settings
-        if (!realKey || realKey.length == 0) realKey = [defaults objectForKey:@"api_key_preference"];
-        if (!realKey || realKey.length == 0) realKey = [defaults objectForKey:@"API_KEY"];
-        
-        if (realKey && realKey.length > 0) {
-            // Mẹo lừa tiền tố: Xóa 'sk-' nếu bạn lỡ nhập vào cài đặt để đánh lừa app
-            if ([realKey hasPrefix:@"sk-gsk_"]) {
-                realKey = [realKey stringByReplacingOccurrencesOfString:@"sk-gsk_" withString:@"gsk_"];
-            }
-            value = [NSString stringWithFormat:@"Bearer %@", realKey];
-        }
-    }
-    %orig(value, field);
 }
 
 %end
 
 // -----------------------------------------------
-// 2. VÔ HIỆU HÓA CÁC HÀM KIỂM TRA API KEY
+// 2. Fix login: /v1/me -> /v1/models
 // -----------------------------------------------
+
 %hook CGAPIHelper
 
-// Chặn đứng hàm kiểm tra ngầm của ứng dụng
-+ (void)checkForAPIKeyValidity {
-    // Để trống hàm này. 
-    // Ứng dụng gọi hàm này -> Tweak chặn lại -> Không có lỗi mạng nào xảy ra -> App tưởng key đúng.
-}
-
-// Chặn hàm Login (phòng trường hợp app ép người dùng qua màn hình Welcome)
 + (void)logInUserwithKey:(NSString *)key {
-    // Không thèm gọi API xác minh nữa, ép lưu trạng thái thành công luôn!
-    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasLoggedInUser"];
-    [[NSUserDefaults standardUserDefaults] setObject:key forKey:@"apiKey"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [NSNotificationCenter.defaultCenter postNotificationName:@"LOG-IN VALID" object:nil];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSURL *endpoint = [NSURL URLWithString:
+                           [NSString stringWithFormat:@"%@/v1/models", GROQ_DOMAIN]];
+
+        NSMutableURLRequest *req = [[NSMutableURLRequest alloc] init];
+        [req setURL:endpoint];
+        [req setHTTPMethod:@"GET"];
+        [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+        [req setValue:[NSString stringWithFormat:@"Bearer %@", key]
+   forHTTPHeaderField:@"Authorization"];
+
+        NSURLResponse *resp;
+        NSError *err;
+        NSData *data = [NSURLConnection sendSynchronousRequest:req
+                                            returningResponse:&resp
+                                                        error:&err];
+        if (data) {
+            NSDictionary *parsed = [NSJSONSerialization JSONObjectWithData:data
+                                                                   options:0
+                                                                     error:&err];
+            if (parsed[@"error"]) {
+                NSString *msg = parsed[@"error"][@"message"];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    TWEAKAlert(@"Warning", msg);
+                    [NSNotificationCenter.defaultCenter
+                        postNotificationName:@"LOG-IN FAILURE" object:nil];
+                });
+                return;
+            }
+            [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasLoggedInUser"];
+            [[NSUserDefaults standardUserDefaults] setObject:key  forKey:@"apiKey"];
+            [[NSUserDefaults standardUserDefaults] setObject:@"Groq" forKey:@"username"];
+            [[NSUserDefaults standardUserDefaults] setObject:@""     forKey:@"email"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+            [NSNotificationCenter.defaultCenter
+                postNotificationName:@"LOG-IN VALID" object:nil];
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                TWEAKAlert(@"Connection Error",
+                           @"Could not connect to Groq. Check your API key and internet.");
+            });
+            [NSNotificationCenter.defaultCenter
+                postNotificationName:@"LOG-IN FAILURE" object:nil];
+        }
     });
 }
 
 // -----------------------------------------------
-// 3. Sửa câu thông báo lỗi
+// 3. Luu lich su chat vao Documents/ (mirror)
 // -----------------------------------------------
-+ (id)loopErrorBack:(NSString *)msg {
-    if ([msg rangeOfString:@"OpenAI"].location != NSNotFound) {
-        msg = @"Lỗi trả về từ Groq: Hãy chắc chắn bạn điền đúng Model (vd: llama3-8b-8192) và API Key của Groq.";
+
++ (void)saveConversationWithArray:(NSMutableArray *)arr
+                           withID:(NSString *)uuid
+                        withTitle:(NSString *)title {
+    %orig;
+    NSString *tmp = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                     [NSString stringWithFormat:@"%@.json", uuid]];
+    NSString *doc = [TWEAKDocumentsDir() stringByAppendingPathComponent:
+                     [NSString stringWithFormat:@"%@.json", uuid]];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if ([fm fileExistsAtPath:tmp]) {
+        if ([fm fileExistsAtPath:doc]) [fm removeItemAtPath:doc error:nil];
+        [fm copyItemAtPath:tmp toPath:doc error:nil];
     }
-    return %orig(msg);
 }
 
-+ (void)alert:(NSString *)title withMessage:(NSString *)message {
-    if ([message rangeOfString:@"OpenAI"].location != NSNotFound) {
-        message = [message stringByReplacingOccurrencesOfString:@"OpenAI" withString:@"Groq"];
++ (NSMutableArray *)loadConversations {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *docs = TWEAKDocumentsDir();
+    NSString *tmp  = NSTemporaryDirectory();
+    for (NSString *f in [fm contentsOfDirectoryAtPath:docs error:nil]) {
+        if (![f hasSuffix:@".json"]) continue;
+        NSString *t = [tmp  stringByAppendingPathComponent:f];
+        NSString *d = [docs stringByAppendingPathComponent:f];
+        if (![fm fileExistsAtPath:t]) [fm copyItemAtPath:d toPath:t error:nil];
     }
-    %orig(title, message);
+    return %orig;
+}
+
++ (BOOL)deleteConversationWithUUID:(NSString *)uuid {
+    BOOL r = %orig;
+    [[NSFileManager defaultManager]
+     removeItemAtPath:[TWEAKDocumentsDir() stringByAppendingPathComponent:
+                       [NSString stringWithFormat:@"%@.json", uuid]]
+                error:nil];
+    return r;
+}
+
++ (BOOL)deleteAllConversations {
+    BOOL r = %orig;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *f in [fm contentsOfDirectoryAtPath:TWEAKDocumentsDir() error:nil])
+        if ([f.pathExtension isEqualToString:@"json"])
+            [fm removeItemAtPath:[TWEAKDocumentsDir()
+                                  stringByAppendingPathComponent:f] error:nil];
+    return r;
 }
 
 %end
