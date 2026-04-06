@@ -6,6 +6,7 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 
 #define GROQ_DOMAIN @"https://api.groq.com/openai"
 #define OPENAI_DOMAIN @"https://api.openai.com"
