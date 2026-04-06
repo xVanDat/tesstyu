@@ -1,18 +1,23 @@
 // ChatGPTCompatTweak
-// - Redirect tat ca request tu api.openai.com sang api.groq.com/openai
-// - Fix login flow: /v1/me -> /v1/models (Groq compatible)
-// - Luu lich su chat vao Documents/ (vinh vien, khong bi iOS xoa)
+// - Redirect api.openai.com -> api.groq.com/openai
+// - Fix login flow: /v1/me -> /v1/models
+// - Tu dong bypass Welcome screen neu da co API key trong Settings
+// - Luu lich su chat vao Documents/
 
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 
-#define GROQ_DOMAIN @"https://api.groq.com/openai"
+#define GROQ_DOMAIN   @"https://api.groq.com/openai"
 #define OPENAI_DOMAIN @"https://api.openai.com"
 
 @interface CGAPIHelper : NSObject
 + (void)alert:(NSString *)title withMessage:(NSString *)message;
+@end
+
+@interface SVProgressHUD : NSObject
++ (void)dismiss;
 @end
 
 static NSString *TWEAKDocumentsDir() {
@@ -27,8 +32,15 @@ static void TWEAKAlert(NSString *title, NSString *msg) {
             cls, @selector(alert:withMessage:), title, msg);
 }
 
+// Kiem tra apiKey trong ca Settings bundle lam UserDefaults
+static NSString *TWEAKGetAPIKey() {
+    // Sync truoc de dam bao lay gia tri moi nhat tu Settings app
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    return [[NSUserDefaults standardUserDefaults] objectForKey:@"apiKey"];
+}
+
 // -----------------------------------------------
-// 1. Redirect tat ca request openai -> groq
+// 1. Redirect openai -> groq
 // -----------------------------------------------
 
 %hook NSMutableURLRequest
@@ -46,16 +58,26 @@ static void TWEAKAlert(NSString *title, NSString *msg) {
 %end
 
 // -----------------------------------------------
-// 2. Fix login: /v1/me -> /v1/models
+// 2. CGAPIHelper - login + storage
 // -----------------------------------------------
 
 %hook CGAPIHelper
 
+// 2a. Bypass canh bao "API Key is missing" neu key co trong Settings
++ (void)checkForAPIKeyValidity {
+    NSString *key = TWEAKGetAPIKey();
+    if (!key || key.length == 0) {
+        TWEAKAlert(@"Warning", @"API key is missing. Please add your Groq key in Settings.");
+        return;
+    }
+    %orig;
+}
+
+// 2b. Login dung /v1/models thay /v1/me
 + (void)logInUserwithKey:(NSString *)key {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSURL *endpoint = [NSURL URLWithString:
                            [NSString stringWithFormat:@"%@/v1/models", GROQ_DOMAIN]];
-
         NSMutableURLRequest *req = [[NSMutableURLRequest alloc] init];
         [req setURL:endpoint];
         [req setHTTPMethod:@"GET"];
@@ -73,16 +95,16 @@ static void TWEAKAlert(NSString *title, NSString *msg) {
                                                                    options:0
                                                                      error:&err];
             if (parsed[@"error"]) {
-                NSString *msg = parsed[@"error"][@"message"];
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    TWEAKAlert(@"Warning", msg);
+                    TWEAKAlert(@"Warning", parsed[@"error"][@"message"]);
                     [NSNotificationCenter.defaultCenter
                         postNotificationName:@"LOG-IN FAILURE" object:nil];
                 });
                 return;
             }
             [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasLoggedInUser"];
-            [[NSUserDefaults standardUserDefaults] setObject:key  forKey:@"apiKey"];
+            [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"firstLaunch"];
+            [[NSUserDefaults standardUserDefaults] setObject:key    forKey:@"apiKey"];
             [[NSUserDefaults standardUserDefaults] setObject:@"Groq" forKey:@"username"];
             [[NSUserDefaults standardUserDefaults] setObject:@""     forKey:@"email"];
             [[NSUserDefaults standardUserDefaults] synchronize];
@@ -99,10 +121,7 @@ static void TWEAKAlert(NSString *title, NSString *msg) {
     });
 }
 
-// -----------------------------------------------
-// 3. Luu lich su chat vao Documents/ (mirror)
-// -----------------------------------------------
-
+// 2c. Mirror sang Documents/
 + (void)saveConversationWithArray:(NSMutableArray *)arr
                            withID:(NSString *)uuid
                         withTitle:(NSString *)title {
@@ -148,6 +167,36 @@ static void TWEAKAlert(NSString *title, NSString *msg) {
             [fm removeItemAtPath:[TWEAKDocumentsDir()
                                   stringByAppendingPathComponent:f] error:nil];
     return r;
+}
+
+%end
+
+// -----------------------------------------------
+// 3. CGChatViewController - tu dong bypass Welcome
+//    neu apiKey da co trong Settings
+// -----------------------------------------------
+
+%hook UIViewController
+
+- (void)viewDidLoad {
+    %orig;
+
+    // Chi xu ly CGChatViewController
+    if (![NSStringFromClass([self class]) isEqualToString:@"CGChatViewController"])
+        return;
+
+    NSString *key = TWEAKGetAPIKey();
+    if (!key || key.length == 0)
+        return; // Khong co key, de Welcome screen hien binh thuong
+
+    // Co key trong Settings -> danh dau da login, skip Welcome
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    if (![ud boolForKey:@"firstLaunch"]) {
+        [ud setBool:YES forKey:@"firstLaunch"];
+        [ud setBool:YES forKey:@"hasLoggedInUser"];
+        [ud setObject:@"Groq" forKey:@"username"];
+        [ud synchronize];
+    }
 }
 
 %end
